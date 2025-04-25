@@ -1,13 +1,12 @@
-import './App.css'
-import QueryForm from './QueryForm'
+import './App.css';
+import QueryForm from './components/QueryForm';
 
 function App() {
-
   return (
     <div>
-      <QueryForm/>
+      <QueryForm />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

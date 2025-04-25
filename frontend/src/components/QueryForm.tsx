@@ -1,38 +1,40 @@
-import React, { FormEvent, useState, useEffect, useRef } from 'react';
+import { FormEvent, useState, useEffect, useRef } from 'react';
 
 type QueryResponse = {
   status: string;
   data: string;
-}
+};
 
-export default function QueryForm ()  {
+export default function QueryForm() {
   const [prompt, setPrompt] = useState<string>('');
   const [responseText, setResponseText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    
+
     if (!prompt.trim()) return;
-    
+
     // 이전 요청이 있다면 중단
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // 새 요청을 위한 AbortController 생성
     abortControllerRef.current = new AbortController();
-    
+
     setIsLoading(true);
     setError(null);
     setResponseText(''); // Reset previous response text
-    
+
     try {
-      const eventSource = new EventSource(`http://localhost:8000/ask_query?prompt=${encodeURIComponent(prompt)}`);
-      
+      const eventSource = new EventSource(
+        `http://localhost:8000/ask_query?prompt=${encodeURIComponent(prompt)}`,
+      );
+
       eventSource.onmessage = (event) => {
         try {
           const parsedData = JSON.parse(event.data) as QueryResponse;
@@ -40,32 +42,31 @@ export default function QueryForm ()  {
           if (parsedData.data !== 'Stream finished') {
             // Make sure newlines are preserved
             const formattedData = parsedData.data;
-            setResponseText(prev => prev + formattedData);
+            setResponseText((prev) => prev + formattedData);
           }
         } catch (e) {
           console.error('Error parsing event data:', event.data, e);
         }
       };
-      
+
       eventSource.onerror = (err) => {
         console.error('EventSource error:', err);
         eventSource.close();
         setIsLoading(false);
         setError('Connection error or stream ended');
       };
-      
+
       // Stream complete
       eventSource.addEventListener('complete', () => {
         eventSource.close();
         setIsLoading(false);
       });
-      
+
       // Clean up function to close connection if component unmounts
       return () => {
         eventSource.close();
         setIsLoading(false);
       };
-      
     } catch (err) {
       setError(`Connection error: ${(err as Error).message}`);
       setIsLoading(false);
@@ -98,9 +99,9 @@ export default function QueryForm ()  {
           </button>
         </div>
       </form>
-      
+
       {error && <div className="error-message">{error}</div>}
-      
+
       <div className="responses-container">
         {responseText && (
           <div className="response-content" style={{ whiteSpace: 'pre-wrap' }}>
@@ -110,4 +111,4 @@ export default function QueryForm ()  {
       </div>
     </div>
   );
-};
+}
