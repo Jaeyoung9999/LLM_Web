@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-openai_api_key = "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"
+openai_api_key = "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"
 client = openai.Client(api_key=openai_api_key)
 
 @app.get("/ask_query")

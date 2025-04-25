@@ -1,11 +1,11 @@
 import React, { FormEvent, useState, useEffect, useRef } from 'react';
 
-interface QueryResponse {
+type QueryResponse = {
   status: string;
   data: string;
 }
 
-const QueryForm: React.FC = () => {
+export default function QueryForm ()  {
   const [prompt, setPrompt] = useState<string>('');
   const [responseText, setResponseText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -111,5 +111,3 @@ const QueryForm: React.FC = () => {
     </div>
   );
 };
-
-export default QueryForm;
