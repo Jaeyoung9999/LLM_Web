@@ -1,4 +1,5 @@
 import { FormEvent, useState, useEffect, useRef } from 'react';
+import styles from './QueryForm.module.scss';
 
 type QueryResponse = {
   status: string;
@@ -83,9 +84,9 @@ export default function QueryForm() {
   }, []);
 
   return (
-    <div className="query-form-container">
+    <div className={styles.queryFormContainer}>
       <form onSubmit={handleSubmit}>
-        <div className="input-group">
+        <div className={styles.inputGroup}>
           <input
             type="text"
             id="promptInput"
@@ -93,20 +94,19 @@ export default function QueryForm() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Enter your prompt here..."
             disabled={isLoading}
+            className={styles.input}
           />
-          <button type="submit" disabled={isLoading}>
+          <button type="submit" disabled={isLoading} className={styles.button}>
             {isLoading ? 'Processing...' : 'Submit'}
           </button>
         </div>
       </form>
 
-      {error && <div className="error-message">{error}</div>}
+      {error && <div className={styles.errorMessage}>{error}</div>}
 
-      <div className="responses-container">
+      <div className={styles.responsesContainer}>
         {responseText && (
-          <div className="response-content" style={{ whiteSpace: 'pre-wrap' }}>
-            {responseText}
-          </div>
+          <div className={styles.responseContent}>{responseText}</div>
         )}
       </div>
     </div>
