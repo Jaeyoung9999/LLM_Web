@@ -1,5 +1,5 @@
 import './App.css';
-import QueryForm from './components/QueryForm';
+import QueryForm from '@/components/QueryForm';
 
 function App() {
   return (
