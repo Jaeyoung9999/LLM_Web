@@ -19,7 +19,7 @@ openai_api_key = "sk-proj-G6URb22PTEjoCBMJmG-v0zeEIg--tL1F_7wDATdhLq7ZQ2ZmWZfUo5
 client = openai.Client(api_key=openai_api_key)
 
 @app.get("/ask_query")
-async def ask_query(prompt: str) -> StreamingResponse:
+async def ask_query(request: Request, prompt: str) -> StreamingResponse:
     async def stream_openai_response():
         try:
             stream = client.chat.completions.create(
@@ -30,17 +30,24 @@ async def ask_query(prompt: str) -> StreamingResponse:
 
             # Using the Server-Sent Events format
             for chunk in stream:
+                # 클라이언트 연결이 끊어졌는지 확인
+                if await request.is_disconnected():
+                    print("Client disconnected, stopping LLM generation")
+                    break
+                
                 content = chunk.choices[0].delta.content or ""
                 if content:
                     # Ensure newlines are preserved in the JSON string
                     data = json.dumps({"status": "processing", "data": content}, ensure_ascii=False)
                     yield f"data: {data}\n\n"
-                    # Small delay to allow frontend processing
+                    # Small delay to allow frontend processing and connection check
                     await asyncio.sleep(0.01)
             
-            # Signal completion without sending "Stream finished" text
-            yield f"data: {json.dumps({'status': 'complete', 'data': ''}, ensure_ascii=False)}\n\n"
-            yield "event: complete\ndata: \n\n"
+            # 연결이 여전히 유지되고 있을 때만 완료 신호 전송
+            if not await request.is_disconnected():
+                # Signal completion without sending "Stream finished" text
+                yield f"data: {json.dumps({'status': 'complete', 'data': ''}, ensure_ascii=False)}\n\n"
+                yield "event: complete\ndata: \n\n"
             
         except Exception as e:
             error_data = json.dumps({"status": "error", "data": str(e)}, ensure_ascii=False)
