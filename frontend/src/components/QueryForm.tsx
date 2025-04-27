@@ -6,14 +6,21 @@ type QueryResponse = {
   data: string;
 };
 
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  isStreaming?: boolean;
+};
+
 export default function QueryForm() {
   const [prompt, setPrompt] = useState<string>('');
-  const [responseText, setResponseText] = useState<string>('');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  // error state 제거
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // textarea 높이 자동 조절
   const adjustTextareaHeight = () => {
@@ -22,6 +29,16 @@ export default function QueryForm() {
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 168)}px`; // 7줄 * 24px 높이
     }
   };
+
+  // 스크롤을 최하단으로 이동
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // 새 메시지가 추가될 때마다 스크롤
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // 키보드 이벤트 처리
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -38,45 +55,77 @@ export default function QueryForm() {
 
     if (!prompt.trim()) return;
 
+    // 사용자 메시지 추가
+    const userMessage = prompt.trim();
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+
+    // 어시스턴트 메시지를 스트리밍 상태로 추가
+    setMessages((prev) => [
+      ...prev,
+      { role: 'assistant', content: '', isStreaming: true },
+    ]);
+
+    setPrompt(''); // 입력 필드 초기화
     setIsLoading(true);
-    setError(null);
-    setResponseText(''); // Reset previous response text
+    // error 관련 코드 제거
 
     try {
       eventSourceRef.current = new EventSource(
-        `http://localhost:8000/ask_query?prompt=${encodeURIComponent(prompt)}`,
+        `http://localhost:8000/ask_query?prompt=${encodeURIComponent(userMessage)}`,
       );
 
       eventSourceRef.current.onmessage = (event) => {
         try {
           const parsedData = JSON.parse(event.data) as QueryResponse;
-          // Filter out the "Stream finished" message and only append meaningful data
-          if (parsedData.data !== 'Stream finished') {
-            // Make sure newlines are preserved
+
+          if (parsedData.data === 'Stream finished') {
+            // 스트림이 끝났을 때 처리
+            eventSourceRef.current?.close();
+            eventSourceRef.current = null;
+            setIsLoading(false);
+
+            // 스트리밍 상태 해제
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.isStreaming) {
+                lastMessage.isStreaming = false;
+              }
+              return newMessages;
+            });
+          } else {
+            // 메시지 내용 업데이트
             const formattedData = parsedData.data;
-            setResponseText((prev) => prev + formattedData);
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.isStreaming) {
+                lastMessage.content += formattedData;
+              }
+              return newMessages;
+            });
           }
-        } catch (e) {
-          console.error('Error parsing event data:', event.data, e);
+        } catch {
+          // 파싱 에러 로그 제거
         }
       };
 
-      eventSourceRef.current.onerror = (err) => {
-        console.error('EventSource error:', err);
+      eventSourceRef.current.onerror = () => {
         eventSourceRef.current?.close();
         eventSourceRef.current = null;
         setIsLoading(false);
-        setError('Connection error or stream ended');
-      };
 
-      // Stream complete
-      eventSourceRef.current.addEventListener('complete', () => {
-        eventSourceRef.current?.close();
-        eventSourceRef.current = null;
-        setIsLoading(false);
-      });
-    } catch (err) {
-      setError(`Connection error: ${(err as Error).message}`);
+        // 스트리밍 상태 해제
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage && lastMessage.isStreaming) {
+            lastMessage.isStreaming = false;
+          }
+          return newMessages;
+        });
+      };
+    } catch {
       setIsLoading(false);
     }
   };
@@ -89,7 +138,17 @@ export default function QueryForm() {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
       setIsLoading(false);
-      setResponseText((prev) => prev + '\n[생성 중단됨]');
+
+      // 중단된 응답 처리
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage && lastMessage.isStreaming) {
+          lastMessage.content += '\n[생성 중단됨]';
+          lastMessage.isStreaming = false;
+        }
+        return newMessages;
+      });
     }
   };
 
@@ -111,13 +170,27 @@ export default function QueryForm() {
   return (
     <div className={styles.queryFormContainer}>
       <div className={styles.responsesContainer}>
-        {responseText && (
-          <div className={styles.responseContent}>{responseText}</div>
-        )}
+        {messages.map((message, index) => (
+          <div
+            key={index}
+            className={`${styles.messageWrapper} ${
+              message.role === 'user'
+                ? styles.userMessage
+                : styles.assistantMessage
+            }`}
+          >
+            <div className={styles.messageContent}>
+              {message.content}
+              {message.isStreaming && <span className={styles.cursor}>▋</span>}
+            </div>
+          </div>
+        ))}
+
+        <div ref={messagesEndRef} />
       </div>
 
       <div className={styles.inputSection}>
-        {error && <div className={styles.errorMessage}>{error}</div>}
+        {/* error 메시지 표시 제거 */}
 
         <form onSubmit={handleSubmit}>
           <div className={styles.inputGroup}>
