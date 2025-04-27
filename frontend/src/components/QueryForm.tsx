@@ -12,7 +12,7 @@ export default function QueryForm() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // textarea 높이 자동 조절
@@ -25,7 +25,7 @@ export default function QueryForm() {
 
   // 키보드 이벤트 처리
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !isLoading) {
       event.preventDefault();
       handleSubmit(event as unknown as FormEvent<HTMLFormElement>);
     }
@@ -34,26 +34,20 @@ export default function QueryForm() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (isLoading) return; // 이미 로딩 중이면 중복 실행 방지
+
     if (!prompt.trim()) return;
-
-    // 이전 요청이 있다면 중단
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    // 새 요청을 위한 AbortController 생성
-    abortControllerRef.current = new AbortController();
 
     setIsLoading(true);
     setError(null);
     setResponseText(''); // Reset previous response text
 
     try {
-      const eventSource = new EventSource(
+      eventSourceRef.current = new EventSource(
         `http://localhost:8000/ask_query?prompt=${encodeURIComponent(prompt)}`,
       );
 
-      eventSource.onmessage = (event) => {
+      eventSourceRef.current.onmessage = (event) => {
         try {
           const parsedData = JSON.parse(event.data) as QueryResponse;
           // Filter out the "Stream finished" message and only append meaningful data
@@ -67,35 +61,44 @@ export default function QueryForm() {
         }
       };
 
-      eventSource.onerror = (err) => {
+      eventSourceRef.current.onerror = (err) => {
         console.error('EventSource error:', err);
-        eventSource.close();
+        eventSourceRef.current?.close();
+        eventSourceRef.current = null;
         setIsLoading(false);
         setError('Connection error or stream ended');
       };
 
       // Stream complete
-      eventSource.addEventListener('complete', () => {
-        eventSource.close();
+      eventSourceRef.current.addEventListener('complete', () => {
+        eventSourceRef.current?.close();
+        eventSourceRef.current = null;
         setIsLoading(false);
       });
-
-      // Clean up function to close connection if component unmounts
-      return () => {
-        eventSource.close();
-        setIsLoading(false);
-      };
     } catch (err) {
       setError(`Connection error: ${(err as Error).message}`);
       setIsLoading(false);
     }
   };
 
-  // 컴포넌트 언마운트시 요청 중단
+  const handleStop = (event: React.MouseEvent) => {
+    event.preventDefault(); // 이벤트 전파 방지
+    event.stopPropagation(); // 이벤트 버블링 방지
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsLoading(false);
+      setResponseText((prev) => prev + '\n[생성 중단됨]');
+    }
+  };
+
+  // 컴포넌트 언마운트시 정리
   useEffect(() => {
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
     };
   }, []);
@@ -129,11 +132,12 @@ export default function QueryForm() {
               rows={1}
             />
             <button
-              type="submit"
-              disabled={isLoading}
-              className={styles.button}
+              type={isLoading ? 'button' : 'submit'}
+              onClick={isLoading ? handleStop : undefined}
+              disabled={!isLoading && !prompt.trim()}
+              className={`${styles.button} ${isLoading ? styles.stopButton : ''}`}
             >
-              {isLoading ? 'Processing...' : 'Submit'}
+              {isLoading ? 'Stop' : 'Submit'}
             </button>
           </div>
         </form>

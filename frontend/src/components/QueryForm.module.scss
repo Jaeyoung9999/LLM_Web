@@ -90,6 +90,7 @@
           cursor: pointer;
           transition: background-color 0.2s;
           white-space: nowrap;
+          min-width: 90px; // Stop과 Submit 길이를 고정하여 일관성 유지
 
           &:hover {
             background-color: #0060df;
@@ -98,6 +99,14 @@
           &:disabled {
             background-color: #ccc;
             cursor: not-allowed;
+          }
+
+          &.stopButton {
+            background-color: #d32f2f;
+
+            &:hover {
+              background-color: #b71c1c;
+            }
           }
         }
       }
