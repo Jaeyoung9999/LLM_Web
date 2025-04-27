@@ -6,6 +6,7 @@ import {
   KeyboardEvent,
   useCallback,
 } from 'react';
+import ReactMarkdown from 'react-markdown';
 import styles from './QueryForm.module.scss';
 
 type QueryResponse = {
@@ -24,7 +25,6 @@ export default function QueryForm() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAutoScroll, setIsAutoScroll] = useState<boolean>(true);
-  // error state 제거
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -90,7 +90,6 @@ export default function QueryForm() {
     setPrompt(''); // 입력 필드 초기화
     setIsLoading(true);
     setIsAutoScroll(true); // 새 메시지를 보낼 때 자동 스크롤 활성화
-    // error 관련 코드 제거
 
     try {
       eventSourceRef.current = new EventSource(
@@ -207,8 +206,16 @@ export default function QueryForm() {
             }`}
           >
             <div className={styles.messageContent}>
-              {message.content}
-              {message.isStreaming && <span className={styles.cursor}>▋</span>}
+              {message.role === 'assistant' ? (
+                <>
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                  {message.isStreaming && (
+                    <span className={styles.cursor}>▋</span>
+                  )}
+                </>
+              ) : (
+                message.content
+              )}
             </div>
           </div>
         ))}
@@ -217,8 +224,6 @@ export default function QueryForm() {
       </div>
 
       <div className={styles.inputSection}>
-        {/* error 메시지 표시 제거 */}
-
         <form onSubmit={handleSubmit}>
           <div className={styles.inputGroup}>
             <textarea

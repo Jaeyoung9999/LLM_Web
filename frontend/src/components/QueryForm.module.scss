@@ -41,12 +41,141 @@
           color: #333;
           border-radius: 16px 16px 16px 4px;
           max-width: 80%;
+
+          // Markdown 스타일링
+          h1,
+          h2,
+          h3,
+          h4,
+          h5,
+          h6 {
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+            line-height: 1.25;
+          }
+
+          h1 {
+            font-size: 24px;
+          }
+          h2 {
+            font-size: 20px;
+          }
+          h3 {
+            font-size: 18px;
+          }
+          h4 {
+            font-size: 16px;
+          }
+          h5 {
+            font-size: 14px;
+          }
+          h6 {
+            font-size: 13px;
+          }
+
+          p {
+            margin: 0 0 10px 0;
+            white-space: pre-wrap;
+          }
+
+          ul,
+          ol {
+            margin: 0 0 10px 0;
+            padding-left: 24px;
+          }
+
+          li {
+            margin-bottom: 4px;
+          }
+
+          code {
+            background-color: rgba(0, 0, 0, 0.08);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
+            font-size: 0.9em;
+          }
+
+          pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 10px 0;
+
+            code {
+              background-color: transparent;
+              padding: 0;
+              color: inherit;
+              font-size: 14px;
+              line-height: 1.5;
+            }
+          }
+
+          blockquote {
+            border-left: 4px solid #ddd;
+            margin: 10px 0;
+            padding-left: 16px;
+            color: #666;
+          }
+
+          table {
+            border-collapse: collapse;
+            margin: 10px 0;
+            width: 100%;
+
+            th,
+            td {
+              border: 1px solid #ddd;
+              padding: 8px;
+              text-align: left;
+            }
+
+            th {
+              background-color: #f5f5f5;
+              font-weight: 600;
+            }
+
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+          }
+
+          a {
+            color: #0070f3;
+            text-decoration: none;
+
+            &:hover {
+              text-decoration: underline;
+            }
+          }
+
+          hr {
+            border: none;
+            border-top: 1px solid #ddd;
+            margin: 16px 0;
+          }
+
+          img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+          }
+
+          strong {
+            font-weight: 600;
+          }
+
+          em {
+            font-style: italic;
+          }
         }
       }
 
       .messageContent {
         padding: 12px 16px;
-        white-space: pre-wrap;
         line-height: 1.6;
         font-size: 15px;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -72,8 +201,6 @@
     flex-direction: column;
     align-items: center;
     border-top: 1px solid #eee;
-
-    // error 메시지 스타일 제거
 
     form {
       width: 100%;
