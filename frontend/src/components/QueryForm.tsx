@@ -1,4 +1,11 @@
-import { FormEvent, useState, useEffect, useRef, KeyboardEvent } from 'react';
+import {
+  FormEvent,
+  useState,
+  useEffect,
+  useRef,
+  KeyboardEvent,
+  useCallback,
+} from 'react';
 import styles from './QueryForm.module.scss';
 
 type QueryResponse = {
@@ -16,11 +23,13 @@ export default function QueryForm() {
   const [prompt, setPrompt] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isAutoScroll, setIsAutoScroll] = useState<boolean>(true);
   // error state 제거
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const responsesContainerRef = useRef<HTMLDivElement | null>(null);
 
   // textarea 높이 자동 조절
   const adjustTextareaHeight = () => {
@@ -31,14 +40,27 @@ export default function QueryForm() {
   };
 
   // 스크롤을 최하단으로 이동
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = useCallback(() => {
+    if (isAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [isAutoScroll]);
+
+  // 스크롤 이벤트 핸들러
+  const handleScroll = () => {
+    if (responsesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } =
+        responsesContainerRef.current;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20; // 10px 정도의 여유를 둠
+
+      setIsAutoScroll(isAtBottom);
+    }
   };
 
   // 새 메시지가 추가될 때마다 스크롤
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   // 키보드 이벤트 처리
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -67,6 +89,7 @@ export default function QueryForm() {
 
     setPrompt(''); // 입력 필드 초기화
     setIsLoading(true);
+    setIsAutoScroll(true); // 새 메시지를 보낼 때 자동 스크롤 활성화
     // error 관련 코드 제거
 
     try {
@@ -169,7 +192,11 @@ export default function QueryForm() {
 
   return (
     <div className={styles.queryFormContainer}>
-      <div className={styles.responsesContainer}>
+      <div
+        className={styles.responsesContainer}
+        ref={responsesContainerRef}
+        onScroll={handleScroll}
+      >
         {messages.map((message, index) => (
           <div
             key={index}
