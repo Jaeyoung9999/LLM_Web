@@ -7,6 +7,8 @@ import {
   useCallback,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import styles from './QueryForm.module.scss';
 
 type QueryResponse = {
@@ -35,7 +37,7 @@ export default function QueryForm() {
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 168)}px`; // 7줄 * 24px 높이
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 168)}px`;
     }
   };
 
@@ -51,18 +53,16 @@ export default function QueryForm() {
     if (responsesContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } =
         responsesContainerRef.current;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20; // 10px 정도의 여유를 둠
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20;
 
       setIsAutoScroll(isAtBottom);
     }
   };
 
-  // 새 메시지가 추가될 때마다 스크롤
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // 키보드 이벤트 처리
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !isLoading) {
       event.preventDefault();
@@ -73,23 +73,21 @@ export default function QueryForm() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (isLoading) return; // 이미 로딩 중이면 중복 실행 방지
+    if (isLoading) return;
 
     if (!prompt.trim()) return;
 
-    // 사용자 메시지 추가
     const userMessage = prompt.trim();
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
 
-    // 어시스턴트 메시지를 스트리밍 상태로 추가
     setMessages((prev) => [
       ...prev,
       { role: 'assistant', content: '', isStreaming: true },
     ]);
 
-    setPrompt(''); // 입력 필드 초기화
+    setPrompt('');
     setIsLoading(true);
-    setIsAutoScroll(true); // 새 메시지를 보낼 때 자동 스크롤 활성화
+    setIsAutoScroll(true);
 
     try {
       eventSourceRef.current = new EventSource(
@@ -101,12 +99,10 @@ export default function QueryForm() {
           const parsedData = JSON.parse(event.data) as QueryResponse;
 
           if (parsedData.data === 'Stream finished') {
-            // 스트림이 끝났을 때 처리
             eventSourceRef.current?.close();
             eventSourceRef.current = null;
             setIsLoading(false);
 
-            // 스트리밍 상태 해제
             setMessages((prev) => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -116,7 +112,6 @@ export default function QueryForm() {
               return newMessages;
             });
           } else {
-            // 메시지 내용 업데이트
             const formattedData = parsedData.data;
             setMessages((prev) => {
               const newMessages = [...prev];
@@ -137,7 +132,6 @@ export default function QueryForm() {
         eventSourceRef.current = null;
         setIsLoading(false);
 
-        // 스트리밍 상태 해제
         setMessages((prev) => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
@@ -153,15 +147,14 @@ export default function QueryForm() {
   };
 
   const handleStop = (event: React.MouseEvent) => {
-    event.preventDefault(); // 이벤트 전파 방지
-    event.stopPropagation(); // 이벤트 버블링 방지
+    event.preventDefault();
+    event.stopPropagation();
 
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
       setIsLoading(false);
 
-      // 중단된 응답 처리
       setMessages((prev) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
@@ -174,7 +167,6 @@ export default function QueryForm() {
     }
   };
 
-  // 컴포넌트 언마운트시 정리
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
@@ -184,7 +176,6 @@ export default function QueryForm() {
     };
   }, []);
 
-  // textarea 높이 조절
   useEffect(() => {
     adjustTextareaHeight();
   }, [prompt]);
@@ -208,7 +199,33 @@ export default function QueryForm() {
             <div className={styles.messageContent}>
               {message.role === 'assistant' ? (
                 <>
-                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      code({ node, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const isInline =
+                          !match &&
+                          node?.tagName === 'code' &&
+                          !node?.position?.start?.line;
+
+                        return !isInline && match ? (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            PreTag="div"
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
                   {message.isStreaming && (
                     <span className={styles.cursor}>▋</span>
                   )}
