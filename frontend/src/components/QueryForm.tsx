@@ -1,4 +1,4 @@
-import { FormEvent, useState, useEffect, useRef } from 'react';
+import { FormEvent, useState, useEffect, useRef, KeyboardEvent } from 'react';
 import styles from './QueryForm.module.scss';
 
 type QueryResponse = {
@@ -13,6 +13,23 @@ export default function QueryForm() {
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // textarea 높이 자동 조절
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 168)}px`; // 7줄 * 24px 높이
+    }
+  };
+
+  // 키보드 이벤트 처리
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit(event as unknown as FormEvent<HTMLFormElement>);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -83,31 +100,43 @@ export default function QueryForm() {
     };
   }, []);
 
+  // textarea 높이 조절
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [prompt]);
+
   return (
     <div className={styles.queryFormContainer}>
-      <form onSubmit={handleSubmit}>
-        <div className={styles.inputGroup}>
-          <input
-            type="text"
-            id="promptInput"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter your prompt here..."
-            disabled={isLoading}
-            className={styles.input}
-          />
-          <button type="submit" disabled={isLoading} className={styles.button}>
-            {isLoading ? 'Processing...' : 'Submit'}
-          </button>
-        </div>
-      </form>
-
-      {error && <div className={styles.errorMessage}>{error}</div>}
-
       <div className={styles.responsesContainer}>
         {responseText && (
           <div className={styles.responseContent}>{responseText}</div>
         )}
+      </div>
+
+      <div className={styles.inputSection}>
+        {error && <div className={styles.errorMessage}>{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className={styles.inputGroup}>
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Enter your prompt here... (Press Enter to submit, Shift+Enter for new line)"
+              disabled={isLoading}
+              className={styles.textarea}
+              rows={1}
+            />
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={styles.button}
+            >
+              {isLoading ? 'Processing...' : 'Submit'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
