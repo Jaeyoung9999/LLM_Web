@@ -7,6 +7,7 @@ import {
   useCallback,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import styles from './QueryForm.module.scss';
@@ -200,6 +201,7 @@ export default function QueryForm() {
               {message.role === 'assistant' ? (
                 <>
                   <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     components={{
                       code({ node, className, children, ...props }) {
                         const match = /language-(\w+)/.exec(className || '');
