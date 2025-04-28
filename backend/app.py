@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import openai
 import json
 import asyncio
+from typing import List, Dict, Any
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -18,36 +20,89 @@ app.add_middleware(
 openai_api_key = "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"
 client = openai.Client(api_key=openai_api_key)
 
-@app.get("/ask_query")
-async def ask_query(request: Request, prompt: str) -> StreamingResponse:
+# Define a model for the message format
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+# Define a model for the request body
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
+@app.post("/chat")
+async def chat(request: Request) -> StreamingResponse:
+    # Parse the request body
+    chat_request_data = await request.json()
+    messages = chat_request_data.get("messages", [])
+    
     async def stream_openai_response():
         try:
+            # Add system message if not present
+            if not any(msg["role"] == "system" for msg in messages):
+                messages.insert(0, {"role": "system", "content": "You are a helpful assistant."})
+            
             stream = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 model="gpt-3.5-turbo",
                 stream=True,
             )
 
-            # Using the Server-Sent Events format
             for chunk in stream:
-                # 클라이언트 연결이 끊어졌는지 확인
+                # Check if client disconnected
                 if await request.is_disconnected():
                     print("Client disconnected, stopping LLM generation")
                     break
                 
                 content = chunk.choices[0].delta.content or ""
                 if content:
-                    # Ensure newlines are preserved in the JSON string
                     data = json.dumps({"status": "processing", "data": content}, ensure_ascii=False)
                     yield f"data: {data}\n\n"
-                    # Small delay to allow frontend processing and connection check
                     await asyncio.sleep(0.01)
             
-            # 연결이 여전히 유지되고 있을 때만 완료 신호 전송
             if not await request.is_disconnected():
-                # Signal completion without sending "Stream finished" text
-                yield f"data: {json.dumps({'status': 'complete', 'data': ''}, ensure_ascii=False)}\n\n"
-                yield "event: complete\ndata: \n\n"
+                yield f"data: {json.dumps({'status': 'complete', 'data': 'Stream finished'}, ensure_ascii=False)}\n\n"
+            
+        except Exception as e:
+            error_data = json.dumps({"status": "error", "data": str(e)}, ensure_ascii=False)
+            yield f"data: {error_data}\n\n"
+
+    return StreamingResponse(
+        stream_openai_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream"
+        }
+    )
+
+# Keep the original endpoint for backward compatibility
+@app.get("/ask_query")
+async def ask_query(request: Request, prompt: str) -> StreamingResponse:
+    async def stream_openai_response():
+        try:
+            stream = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."}, 
+                    {"role": "user", "content": prompt}
+                ],
+                model="gpt-3.5-turbo",
+                stream=True,
+            )
+
+            for chunk in stream:
+                if await request.is_disconnected():
+                    print("Client disconnected, stopping LLM generation")
+                    break
+                
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    data = json.dumps({"status": "processing", "data": content}, ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+                    await asyncio.sleep(0.01)
+            
+            if not await request.is_disconnected():
+                yield f"data: {json.dumps({'status': 'complete', 'data': 'Stream finished'}, ensure_ascii=False)}\n\n"
             
         except Exception as e:
             error_data = json.dumps({"status": "error", "data": str(e)}, ensure_ascii=False)

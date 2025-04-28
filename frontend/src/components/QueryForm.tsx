@@ -18,14 +18,16 @@ type QueryResponse = {
 };
 
 type Message = {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   isStreaming?: boolean;
 };
 
 export default function QueryForm() {
   const [prompt, setPrompt] = useState<string>('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'system', content: 'You are a helpful assistant.' },
+  ]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAutoScroll, setIsAutoScroll] = useState<boolean>(true);
 
@@ -79,8 +81,15 @@ export default function QueryForm() {
     if (!prompt.trim()) return;
 
     const userMessage = prompt.trim();
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
 
+    // Add user message to the conversation
+    const updatedMessages = [
+      ...messages,
+      { role: 'user' as const, content: userMessage },
+    ];
+    setMessages(updatedMessages);
+
+    // Add placeholder for assistant response
     setMessages((prev) => [
       ...prev,
       { role: 'assistant', content: '', isStreaming: true },
@@ -91,19 +100,45 @@ export default function QueryForm() {
     setIsAutoScroll(true);
 
     try {
-      eventSourceRef.current = new EventSource(
-        `http://localhost:8000/ask_query?prompt=${encodeURIComponent(userMessage)}`,
-      );
+      // Close any existing connection
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
 
-      eventSourceRef.current.onmessage = (event) => {
-        try {
-          const parsedData = JSON.parse(event.data) as QueryResponse;
+      // Create a StreamingTextEncoder to handle SSE
+      const chatController = new AbortController();
+      const signal = chatController.signal;
 
-          if (parsedData.data === 'Stream finished') {
-            eventSourceRef.current?.close();
-            eventSourceRef.current = null;
+      // Make a POST request with the conversation history
+      const response = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({
+          messages: updatedMessages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+        }),
+        signal: signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const readStream = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
             setIsLoading(false);
-
             setMessages((prev) => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -112,38 +147,84 @@ export default function QueryForm() {
               }
               return newMessages;
             });
-          } else {
-            const formattedData = parsedData.data;
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (lastMessage && lastMessage.isStreaming) {
-                lastMessage.content += formattedData;
-              }
-              return newMessages;
-            });
+            break;
           }
-        } catch {
-          // 파싱 에러 로그 제거
+
+          // Decode the chunk and add it to our buffer
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete SSE messages
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || ''; // Keep the last incomplete chunk in the buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              try {
+                const jsonStr = line.slice(5).trim(); // Remove 'data:' prefix
+                const parsedData = JSON.parse(jsonStr) as QueryResponse;
+
+                if (parsedData.data === 'Stream finished') {
+                  setIsLoading(false);
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.isStreaming) {
+                      lastMessage.isStreaming = false;
+                    }
+                    return newMessages;
+                  });
+                } else {
+                  const formattedData = parsedData.data;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.isStreaming) {
+                      lastMessage.content += formattedData;
+                    }
+                    return newMessages;
+                  });
+                }
+              } catch (e) {
+                // Parse error handling
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
         }
       };
 
-      eventSourceRef.current.onerror = () => {
-        eventSourceRef.current?.close();
-        eventSourceRef.current = null;
+      readStream().catch((error) => {
+        console.error('Stream reading error:', error);
         setIsLoading(false);
-
         setMessages((prev) => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
           if (lastMessage && lastMessage.isStreaming) {
             lastMessage.isStreaming = false;
+            lastMessage.content += '\n[Error: Connection failed]';
           }
           return newMessages;
         });
-      };
-    } catch {
+      });
+
+      // Store the controller to allow stopping the stream
+      eventSourceRef.current = {
+        close: () => {
+          chatController.abort();
+        },
+      } as unknown as EventSource;
+    } catch (error) {
+      console.error('Failed to start chat:', error);
       setIsLoading(false);
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage && lastMessage.isStreaming) {
+          lastMessage.isStreaming = false;
+          lastMessage.content += '\n[Error: Connection failed]';
+        }
+        return newMessages;
+      });
     }
   };
 
@@ -181,6 +262,11 @@ export default function QueryForm() {
     adjustTextareaHeight();
   }, [prompt]);
 
+  const getVisibleMessages = () => {
+    // Filter out system messages from display
+    return messages.filter((msg) => msg.role !== 'system');
+  };
+
   return (
     <div className={styles.queryFormContainer}>
       <div
@@ -188,7 +274,7 @@ export default function QueryForm() {
         ref={responsesContainerRef}
         onScroll={handleScroll}
       >
-        {messages.map((message, index) => (
+        {getVisibleMessages().map((message, index) => (
           <div
             key={index}
             className={`${styles.messageWrapper} ${
