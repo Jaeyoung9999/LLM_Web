@@ -66,10 +66,28 @@ export default function QueryForm() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Auto-focus the textarea when the component mounts
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
+  // Re-focus the textarea after submitting a message
+  useEffect(() => {
+    if (!isLoading && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isLoading]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !isLoading) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      handleSubmit(event as unknown as FormEvent<HTMLFormElement>);
+
+      // Only submit if not loading
+      if (!isLoading && prompt.trim()) {
+        handleSubmit(event as unknown as FormEvent<HTMLFormElement>);
+      }
     }
   };
 
@@ -337,14 +355,14 @@ export default function QueryForm() {
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter your prompt here... (Press Enter to submit, Shift+Enter for new line)"
-              disabled={isLoading}
               className={styles.textarea}
               rows={1}
+              // Removed the disabled attribute to allow cursor placement anytime
             />
             <button
               type={isLoading ? 'button' : 'submit'}
               onClick={isLoading ? handleStop : undefined}
-              disabled={!isLoading && !prompt.trim()}
+              disabled={isLoading ? false : !prompt.trim()}
               className={`${styles.button} ${isLoading ? styles.stopButton : ''}`}
             >
               {isLoading ? 'Stop' : 'Submit'}
