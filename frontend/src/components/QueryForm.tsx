@@ -273,77 +273,83 @@ export default function QueryForm() {
   };
 
   // Save the current chat to localStorage
-  const saveCurrentChat = (msgs: Message[], title?: string) => {
-    if (!currentChatId) return;
+  const saveCurrentChat = useCallback(
+    (msgs: Message[], title?: string) => {
+      if (!currentChatId) return;
 
-    try {
-      let currentHistory: ChatHistory[] = [];
-      const saved = localStorage.getItem('chatHistory');
-      if (saved) {
-        currentHistory = JSON.parse(saved);
-      }
-
-      const currentChatIndex = currentHistory.findIndex(
-        (chat) => chat.id === currentChatId,
-      );
-
-      if (currentChatIndex !== -1) {
-        // Update existing chat
-        currentHistory[currentChatIndex].messages = msgs;
-        if (title) {
-          currentHistory[currentChatIndex].title = title;
+      try {
+        let currentHistory: ChatHistory[] = [];
+        const saved = localStorage.getItem('chatHistory');
+        if (saved) {
+          currentHistory = JSON.parse(saved);
         }
-      } else {
-        // Create new chat entry if it doesn't exist
-        currentHistory.unshift({
-          id: currentChatId,
-          title: title || 'New Chat',
-          messages: msgs,
-          createdAt: Date.now(),
-        });
+
+        const currentChatIndex = currentHistory.findIndex(
+          (chat) => chat.id === currentChatId,
+        );
+
+        if (currentChatIndex !== -1) {
+          // Update existing chat
+          currentHistory[currentChatIndex].messages = msgs;
+          if (title) {
+            currentHistory[currentChatIndex].title = title;
+          }
+        } else {
+          // Create new chat entry if it doesn't exist
+          currentHistory.unshift({
+            id: currentChatId,
+            title: title || 'New Chat',
+            messages: msgs,
+            createdAt: Date.now(),
+          });
+        }
+
+        localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
+
+        // Notify of storage change
+        window.dispatchEvent(new Event('storageChange'));
+      } catch (error) {
+        console.error('Failed to save chat history:', error);
       }
-
-      localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
-
-      // Notify of storage change
-      window.dispatchEvent(new Event('storageChange'));
-    } catch (error) {
-      console.error('Failed to save chat history:', error);
-    }
-  };
+    },
+    [currentChatId],
+  );
 
   // Generate a title for the chat using the AI
-  const generateChatTitle = async (userMsg: string, aiResponse: string) => {
-    try {
-      const response = await fetch('http://localhost:8000/generate-title', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userMessage: userMsg,
-          aiResponse: aiResponse,
-        }),
-      });
+  const generateChatTitle = useCallback(
+    async (userMsg: string, aiResponse: string) => {
+      try {
+        const response = await fetch('http://localhost:8000/generate-title', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userMessage: userMsg,
+            aiResponse: aiResponse,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.title) {
+          saveCurrentChat(messages, data.title);
+        }
+      } catch (error) {
+        console.error('Failed to generate title:', error);
+        // Fallback to using the user message as title
+        const fallbackTitle =
+          userMsg.length > 30 ? `${userMsg.substring(0, 30)}...` : userMsg;
+        saveCurrentChat(messages, fallbackTitle);
       }
 
-      const data = await response.json();
-      if (data.title) {
-        saveCurrentChat(messages, data.title);
-      }
-    } catch (error) {
-      console.error('Failed to generate title:', error);
-      // Fallback to using the user message as title
-      const fallbackTitle =
-        userMsg.length > 30 ? `${userMsg.substring(0, 30)}...` : userMsg;
-      saveCurrentChat(messages, fallbackTitle);
-    }
-
-    setNeedsTitle(false);
-  };
+      setNeedsTitle(false);
+    },
+    [messages, saveCurrentChat],
+  );
 
   // Check if we need to generate a title
   useEffect(() => {
@@ -358,7 +364,7 @@ export default function QueryForm() {
         generateChatTitle(userMsg, aiMsg);
       }
     }
-  }, [needsTitle, messages, isLoading]);
+  }, [needsTitle, messages, isLoading, generateChatTitle]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
