@@ -106,7 +106,7 @@
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          padding-right: 24px; // Make room for delete button
+          padding-right: 54px; // Make room for edit and delete buttons
         }
 
         .chatDate {
@@ -114,18 +114,71 @@
           color: #666;
         }
 
-        .deleteButton {
+        .chatItemButtons {
           position: absolute;
           top: 8px;
           right: 8px;
+          display: flex;
+          gap: 4px;
+        }
+
+        .editButton,
+        .deleteButton {
           background: none;
           border: none;
           cursor: pointer;
           opacity: 0.5;
           font-size: 14px;
+          padding: 2px;
 
           &:hover {
             opacity: 1;
+          }
+        }
+
+        .titleEditContainer {
+          width: 100%;
+          display: flex;
+          gap: 8px;
+        }
+
+        .titleEditInput {
+          flex: 1;
+          font-size: 14px;
+          padding: 4px 8px;
+          border: 1px solid #0070f3;
+          border-radius: 4px;
+          outline: none;
+        }
+
+        .titleEditButtons {
+          display: flex;
+          gap: 4px;
+        }
+
+        .titleEditSaveButton,
+        .titleEditCancelButton {
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0 4px;
+          font-size: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .titleEditSaveButton {
+          color: #00a550;
+          &:hover {
+            color: #008040;
+          }
+        }
+
+        .titleEditCancelButton {
+          color: #d32f2f;
+          &:hover {
+            color: #b71c1c;
           }
         }
       }

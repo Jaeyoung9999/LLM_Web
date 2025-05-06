@@ -41,6 +41,8 @@ export default function QueryForm() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [needsTitle, setNeedsTitle] = useState<boolean>(false);
   const [chatHistory, setChatHistory] = useState<ChatHistory[]>([]);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editedTitle, setEditedTitle] = useState<string>('');
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -116,7 +118,7 @@ export default function QueryForm() {
     }
   }, [isAutoScroll]);
 
-  // 스크롤 이벤트 핸들러
+  // 스크롤 이벤트
   const handleScroll = () => {
     if (responsesContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } =
@@ -154,6 +156,71 @@ export default function QueryForm() {
         handleSubmit(event as unknown as FormEvent<HTMLFormElement>);
       }
     }
+  };
+
+  // Handle title edit key events
+  const handleTitleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    chatId: string,
+  ) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEditedTitle(chatId);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditingTitle();
+    }
+  };
+
+  // Start editing a chat title
+  const startEditingTitle = (
+    e: React.MouseEvent,
+    chatId: string,
+    currentTitle: string,
+  ) => {
+    e.stopPropagation();
+    setEditingChatId(chatId);
+    setEditedTitle(currentTitle);
+  };
+
+  // Save the edited title
+  const saveEditedTitle = (chatId: string) => {
+    if (!editedTitle.trim()) return;
+
+    try {
+      let currentHistory: ChatHistory[] = [];
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) {
+        currentHistory = JSON.parse(saved);
+      }
+
+      const chatIndex = currentHistory.findIndex((chat) => chat.id === chatId);
+      if (chatIndex !== -1) {
+        currentHistory[chatIndex].title = editedTitle.trim();
+        localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
+
+        // Update the local state
+        setChatHistory(currentHistory);
+
+        // If editing the current chat, update its title
+        if (chatId === currentChatId) {
+          saveCurrentChat(messages, editedTitle.trim());
+        }
+
+        // Notify of storage change
+        window.dispatchEvent(new Event('storageChange'));
+      }
+    } catch (error) {
+      console.error('Failed to save edited title:', error);
+    }
+
+    // Reset the editing state
+    setEditingChatId(null);
+  };
+
+  // Cancel editing title
+  const cancelEditingTitle = () => {
+    setEditingChatId(null);
   };
 
   // Format date for display in sidebar
@@ -632,17 +699,60 @@ export default function QueryForm() {
               }`}
               onClick={() => selectChat(chat)}
             >
-              <span className={styles.chatTitle}>{chat.title}</span>
-              <span className={styles.chatDate}>
-                {formatDate(chat.createdAt)}
-              </span>
-              <button
-                className={styles.deleteButton}
-                onClick={(e) => deleteChat(e, chat.id)}
-                aria-label="Delete chat"
-              >
-                🗑️
-              </button>
+              {editingChatId === chat.id ? (
+                <div
+                  className={styles.titleEditContainer}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="text"
+                    className={styles.titleEditInput}
+                    value={editedTitle}
+                    onChange={(e) => setEditedTitle(e.target.value)}
+                    onKeyDown={(e) => handleTitleKeyDown(e, chat.id)}
+                    autoFocus
+                  />
+                  <div className={styles.titleEditButtons}>
+                    <button
+                      className={styles.titleEditSaveButton}
+                      onClick={() => saveEditedTitle(chat.id)}
+                      aria-label="Save title"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className={styles.titleEditCancelButton}
+                      onClick={cancelEditingTitle}
+                      aria-label="Cancel editing"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <span className={styles.chatTitle}>{chat.title}</span>
+                  <span className={styles.chatDate}>
+                    {formatDate(chat.createdAt)}
+                  </span>
+                  <div className={styles.chatItemButtons}>
+                    <button
+                      className={styles.editButton}
+                      onClick={(e) => startEditingTitle(e, chat.id, chat.title)}
+                      aria-label="Edit title"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className={styles.deleteButton}
+                      onClick={(e) => deleteChat(e, chat.id)}
+                      aria-label="Delete chat"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
           {chatHistory.length === 0 && (
