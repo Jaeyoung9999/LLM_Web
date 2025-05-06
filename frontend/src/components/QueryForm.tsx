@@ -23,6 +23,13 @@ type Message = {
   isStreaming?: boolean;
 };
 
+type ChatHistory = {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+};
+
 export default function QueryForm() {
   const [prompt, setPrompt] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([
@@ -30,11 +37,69 @@ export default function QueryForm() {
   ]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAutoScroll, setIsAutoScroll] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [needsTitle, setNeedsTitle] = useState<boolean>(false);
+  const [chatHistory, setChatHistory] = useState<ChatHistory[]>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const responsesContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load chat history from localStorage
+  const loadChatHistory = useCallback(() => {
+    try {
+      const savedChats = localStorage.getItem('chatHistory');
+      if (savedChats) {
+        const parsed = JSON.parse(savedChats);
+        // Sort by most recent first
+        const sorted = parsed.sort(
+          (a: ChatHistory, b: ChatHistory) => b.createdAt - a.createdAt,
+        );
+        setChatHistory(sorted);
+      }
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+    }
+  }, []);
+
+  // Load the current chat or create a new one on mount
+  useEffect(() => {
+    const loadInitialChat = () => {
+      try {
+        const savedChats = localStorage.getItem('chatHistory');
+        if (savedChats) {
+          const chats: ChatHistory[] = JSON.parse(savedChats);
+          if (chats.length > 0) {
+            // Load the most recent chat
+            const mostRecentChat = chats.sort(
+              (a, b) => b.createdAt - a.createdAt,
+            )[0];
+            setMessages(mostRecentChat.messages);
+            setCurrentChatId(mostRecentChat.id);
+            return;
+          }
+        }
+
+        // If no chats exist, create a new one
+        createNewChat();
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+        createNewChat();
+      }
+    };
+
+    loadInitialChat();
+    loadChatHistory();
+
+    // Add event listener to update when chat history changes
+    window.addEventListener('storageChange', loadChatHistory);
+
+    return () => {
+      window.removeEventListener('storageChange', loadChatHistory);
+    };
+  }, [loadChatHistory]);
 
   // textarea 높이 자동 조절
   const adjustTextareaHeight = () => {
@@ -91,6 +156,210 @@ export default function QueryForm() {
     }
   };
 
+  // Format date for display in sidebar
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+
+    // Same day
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    // Within a week
+    const daysDiff = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (daysDiff < 7) {
+      return (
+        date.toLocaleDateString([], { weekday: 'short' }) +
+        ' ' +
+        date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      );
+    }
+
+    // Older
+    return date.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric',
+      year: now.getFullYear() !== date.getFullYear() ? 'numeric' : undefined,
+    });
+  };
+
+  // Create a new chat
+  const createNewChat = () => {
+    const newChatId = Date.now().toString();
+    const newChat: ChatHistory = {
+      id: newChatId,
+      title: 'New Chat',
+      messages: [{ role: 'system', content: 'You are a helpful assistant.' }],
+      createdAt: Date.now(),
+    };
+
+    // Update localStorage
+    let currentHistory: ChatHistory[] = [];
+    try {
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) {
+        currentHistory = JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Error parsing chat history:', error);
+    }
+
+    const updatedHistory = [newChat, ...currentHistory];
+    localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
+
+    // Update state
+    setMessages(newChat.messages);
+    setCurrentChatId(newChatId);
+    setPrompt('');
+
+    // Notify of storage change
+    window.dispatchEvent(new Event('storageChange'));
+
+    // Close sidebar on mobile after creating new chat
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  // Delete a chat
+  const deleteChat = (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+
+    // Update localStorage
+    let currentHistory: ChatHistory[] = [];
+    try {
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) {
+        currentHistory = JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Error parsing chat history:', error);
+    }
+
+    const updatedHistory = currentHistory.filter((chat) => chat.id !== chatId);
+    localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
+
+    // Update state
+    setChatHistory(updatedHistory);
+
+    // If we're deleting the current chat, select a new one or create new
+    if (chatId === currentChatId) {
+      if (updatedHistory.length > 0) {
+        selectChat(updatedHistory[0]);
+      } else {
+        createNewChat();
+      }
+    }
+
+    // Notify of storage change
+    window.dispatchEvent(new Event('storageChange'));
+  };
+
+  // Select a chat from history
+  const selectChat = (chat: ChatHistory) => {
+    setMessages(chat.messages);
+    setCurrentChatId(chat.id);
+
+    // Close sidebar on mobile after selecting
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  // Save the current chat to localStorage
+  const saveCurrentChat = (msgs: Message[], title?: string) => {
+    if (!currentChatId) return;
+
+    try {
+      let currentHistory: ChatHistory[] = [];
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) {
+        currentHistory = JSON.parse(saved);
+      }
+
+      const currentChatIndex = currentHistory.findIndex(
+        (chat) => chat.id === currentChatId,
+      );
+
+      if (currentChatIndex !== -1) {
+        // Update existing chat
+        currentHistory[currentChatIndex].messages = msgs;
+        if (title) {
+          currentHistory[currentChatIndex].title = title;
+        }
+      } else {
+        // Create new chat entry if it doesn't exist
+        currentHistory.unshift({
+          id: currentChatId,
+          title: title || 'New Chat',
+          messages: msgs,
+          createdAt: Date.now(),
+        });
+      }
+
+      localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
+
+      // Notify of storage change
+      window.dispatchEvent(new Event('storageChange'));
+    } catch (error) {
+      console.error('Failed to save chat history:', error);
+    }
+  };
+
+  // Generate a title for the chat using the AI
+  const generateChatTitle = async (userMsg: string, aiResponse: string) => {
+    try {
+      const response = await fetch('http://localhost:8000/generate-title', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userMessage: userMsg,
+          aiResponse: aiResponse,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.title) {
+        saveCurrentChat(messages, data.title);
+      }
+    } catch (error) {
+      console.error('Failed to generate title:', error);
+      // Fallback to using the user message as title
+      const fallbackTitle =
+        userMsg.length > 30 ? `${userMsg.substring(0, 30)}...` : userMsg;
+      saveCurrentChat(messages, fallbackTitle);
+    }
+
+    setNeedsTitle(false);
+  };
+
+  // Check if we need to generate a title
+  useEffect(() => {
+    if (needsTitle && messages.length >= 3 && !isLoading) {
+      // Find the first user and assistant messages
+      const userMsg =
+        messages.find((msg) => msg.role === 'user')?.content || '';
+      const aiMsg =
+        messages.find((msg) => msg.role === 'assistant')?.content || '';
+
+      if (userMsg && aiMsg) {
+        generateChatTitle(userMsg, aiMsg);
+      }
+    }
+  }, [needsTitle, messages, isLoading]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -116,6 +385,14 @@ export default function QueryForm() {
     setPrompt('');
     setIsLoading(true);
     setIsAutoScroll(true);
+
+    // If this is a new chat with only system message, we'll need to generate a title
+    if (messages.length === 1 && messages[0].role === 'system') {
+      setNeedsTitle(true);
+    }
+
+    // Save the current state of the chat
+    saveCurrentChat(updatedMessages);
 
     try {
       // Close any existing connection
@@ -163,6 +440,9 @@ export default function QueryForm() {
               if (lastMessage && lastMessage.isStreaming) {
                 lastMessage.isStreaming = false;
               }
+
+              // Save the completed chat
+              saveCurrentChat(newMessages);
               return newMessages;
             });
             break;
@@ -189,6 +469,9 @@ export default function QueryForm() {
                     if (lastMessage && lastMessage.isStreaming) {
                       lastMessage.isStreaming = false;
                     }
+
+                    // Save the completed chat
+                    saveCurrentChat(newMessages);
                     return newMessages;
                   });
                 } else {
@@ -221,6 +504,9 @@ export default function QueryForm() {
             lastMessage.isStreaming = false;
             lastMessage.content += '\n[Error: Connection failed]';
           }
+
+          // Save the chat with error
+          saveCurrentChat(newMessages);
           return newMessages;
         });
       });
@@ -241,6 +527,9 @@ export default function QueryForm() {
           lastMessage.isStreaming = false;
           lastMessage.content += '\n[Error: Connection failed]';
         }
+
+        // Save the chat with error
+        saveCurrentChat(newMessages);
         return newMessages;
       });
     }
@@ -262,9 +551,16 @@ export default function QueryForm() {
           lastMessage.content += '\n[생성 중단됨]';
           lastMessage.isStreaming = false;
         }
+
+        // Save the chat with the stopped generation
+        saveCurrentChat(newMessages);
         return newMessages;
       });
     }
+  };
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
   };
 
   useEffect(() => {
@@ -286,62 +582,131 @@ export default function QueryForm() {
   };
 
   return (
-    <div className={styles.queryFormContainer}>
+    <div
+      className={`${styles.queryFormContainer} ${isSidebarOpen ? styles.sidebarOpen : ''}`}
+    >
+      {/* Sidebar Toggle Button */}
+      <button
+        className={styles.toggleButton}
+        onClick={toggleSidebar}
+        aria-label="Toggle Sidebar"
+      >
+        ☰
+      </button>
+
+      {/* Overlay for mobile - closes sidebar when clicked */}
+      <div
+        className={`${styles.overlay} ${isSidebarOpen ? styles.visible : ''}`}
+        onClick={toggleSidebar}
+      />
+
+      {/* Sidebar */}
+      <div className={`${styles.sidebar} ${isSidebarOpen ? styles.open : ''}`}>
+        <div className={styles.sidebarHeader}>
+          <h2>Chat History</h2>
+          <button
+            className={styles.closeButton}
+            onClick={toggleSidebar}
+            aria-label="Close sidebar"
+          >
+            ×
+          </button>
+        </div>
+
+        <button className={styles.newChatButton} onClick={createNewChat}>
+          + New Chat
+        </button>
+
+        <div className={styles.chatList}>
+          {chatHistory.map((chat) => (
+            <div
+              key={chat.id}
+              className={`${styles.chatItem} ${
+                currentChatId === chat.id ? styles.active : ''
+              }`}
+              onClick={() => selectChat(chat)}
+            >
+              <span className={styles.chatTitle}>{chat.title}</span>
+              <span className={styles.chatDate}>
+                {formatDate(chat.createdAt)}
+              </span>
+              <button
+                className={styles.deleteButton}
+                onClick={(e) => deleteChat(e, chat.id)}
+                aria-label="Delete chat"
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+          {chatHistory.length === 0 && (
+            <div className={styles.emptyChatList}>No chat history</div>
+          )}
+        </div>
+      </div>
+
       <div
         className={styles.responsesContainer}
         ref={responsesContainerRef}
         onScroll={handleScroll}
       >
-        {getVisibleMessages().map((message, index) => (
-          <div
-            key={index}
-            className={`${styles.messageWrapper} ${
-              message.role === 'user'
-                ? styles.userMessage
-                : styles.assistantMessage
-            }`}
-          >
-            <div className={styles.messageContent}>
-              {message.role === 'assistant' ? (
-                <>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      code({ node, className, children, ...props }) {
-                        const match = /language-(\w+)/.exec(className || '');
-                        const isInline =
-                          !match &&
-                          node?.tagName === 'code' &&
-                          !node?.position?.start?.line;
-
-                        return !isInline && match ? (
-                          <SyntaxHighlighter
-                            style={vscDarkPlus}
-                            language={match[1]}
-                            PreTag="div"
-                          >
-                            {String(children).replace(/\n$/, '')}
-                          </SyntaxHighlighter>
-                        ) : (
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
-                  {message.isStreaming && (
-                    <span className={styles.cursor}>▋</span>
-                  )}
-                </>
-              ) : (
-                message.content
-              )}
-            </div>
+        {getVisibleMessages().length === 0 ? (
+          <div className={styles.welcomeMessage}>
+            <h1>Welcome to Chat</h1>
+            <p>Start a conversation with the AI assistant.</p>
           </div>
-        ))}
+        ) : (
+          getVisibleMessages().map((message, index) => (
+            <div
+              key={index}
+              className={`${styles.messageWrapper} ${
+                message.role === 'user'
+                  ? styles.userMessage
+                  : styles.assistantMessage
+              }`}
+            >
+              <div className={styles.messageContent}>
+                {message.role === 'assistant' ? (
+                  <>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ node, className, children, ...props }) {
+                          const match = /language-(\w+)/.exec(className || '');
+                          const isInline =
+                            !match &&
+                            node?.tagName === 'code' &&
+                            !node?.position?.start?.line;
+
+                          return !isInline && match ? (
+                            <SyntaxHighlighter
+                              style={vscDarkPlus}
+                              language={match[1]}
+                              PreTag="div"
+                            >
+                              {String(children).replace(/\n$/, '')}
+                            </SyntaxHighlighter>
+                          ) : (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          );
+                        },
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                    {message.isStreaming && (
+                      <span className={styles.cursor}>▋</span>
+                    )}
+                  </>
+                ) : (
+                  message.content
+                )}
+              </div>
+            </div>
+          ))
+        )}
 
         <div ref={messagesEndRef} />
       </div>

@@ -29,6 +29,11 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
 
+# Define model for title generation request
+class TitleRequest(BaseModel):
+    userMessage: str
+    aiResponse: str
+
 @app.post("/chat")
 async def chat(request: Request) -> StreamingResponse:
     # Parse the request body
@@ -75,6 +80,34 @@ async def chat(request: Request) -> StreamingResponse:
             "Content-Type": "text/event-stream"
         }
     )
+
+@app.post("/generate-title")
+async def generate_title(request: TitleRequest):
+    try:
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant that creates concise, descriptive titles."},
+            {"role": "user", "content": f"Create a short, descriptive title (maximum 5 words) for a conversation that starts with this user message: '{request.userMessage}' and your first response begins with: '{request.aiResponse[:100]}...'"}
+        ]
+        
+        response = client.chat.completions.create(
+            messages=messages,
+            model="gpt-3.5-turbo",
+            max_tokens=20,
+            temperature=0.7
+        )
+        
+        title = response.choices[0].message.content.strip().replace('"', '')
+        # Remove quotes if the model adds them
+        if title.startswith('"') and title.endswith('"'):
+            title = title[1:-1]
+            
+        return {"title": title}
+    except Exception as e:
+        print(f"Error generating title: {str(e)}")
+        # Fallback to using the first few words of user message
+        words = request.userMessage.split()
+        fallback_title = " ".join(words[:5]) + ("..." if len(words) > 5 else "")
+        return {"title": fallback_title}
 
 # Keep the original endpoint for backward compatibility
 @app.get("/ask_query")
